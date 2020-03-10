@@ -1,9 +1,11 @@
 import os, sys, re
+import tempfile
 # import hou
 main = __import__('__main__')
 hou = main.__dict__['hou']
-import hqt
-reload (hqt)
+
+from Qt import QtCore, QtGui, QtWidgets
+
 from managers.completeWidget import contextCompleterClass
 
 path = os.path.join(os.path.dirname(__file__), 'houdini')
@@ -25,39 +27,124 @@ reload(scriptEditor)
 
 
 def show(*args, **kwargs):
-    hqt.show(scriptEditor.scriptEditorClass, *args, **kwargs)
+    showUi18(scriptEditor.scriptEditorClass, *args, **kwargs)
 
 
+def getHouWindow():  # temporary method
+    # check Houdini version
+    if hou.applicationVersion()[0] > 14:
+        try:
+            return hou.ui.mainQtWindow()
+        except:
+            pass
+    app = QtGui.QApplication.instance()
+    for w in app.topLevelWidgets():
+        if w.windowIconText():
+            return w
 
-# EXAMPLE SHELF BUTTON
-# H13
-# path = 'path/to/MultiScriptEditor_module'
-# # example c:/houdini/python/lib
-# if not path in sys.path:
-#     sys.path.append(path)
-# import pw_multiScriptEditor
-# reload(pw_multiScriptEditor)
-# pw_multiScriptEditor.showHoudini(ontop=1)
 
-# H14
-#import sys
-# path = 'path/to/MultiScriptEditor_module'
-# # example c:/houdini/python/lib
-# if not path in sys.path:
-#     sys.path.append(path)
-# import pw_multiScriptEditor
-# reload(pw_multiScriptEditor)
-# pw_multiScriptEditor.showHoudini(name='Multi Script Editor',replacePyPanel=1, hideTitleMenu=0)
+def createPanelFile(cls, name=None):
+    """
+    quick save python panel file
+    """
+    main.__dict__[cls.__name__] = cls
+    if not name:
+        name = cls.__name__
+    xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<pythonPanelDocument>
+   <interface name="{0}" label="{1}" icon="MISC_python">
+    <script><![CDATA[main = __import__('__main__')
+def createInterface():
+    w = main.__dict__['{0}']()
+    return w
+]]></script>
+  </interface>
+</pythonPanelDocument>'''.format(cls.__name__, name)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pypanel')
+    tmp.write(xml)
+    tmp.close()
+    return tmp.name
 
+
+def installedInterfaces():
+    res = []
+    menu = hou.pypanel.menuInterfaces()
+    for i in menu:
+        try:
+            hou.pypanel.setMenuInterfaces((i,))
+            res.append(i)
+        except:
+            pass
+    return res
+
+
+def delPanFile(path):
+    try:
+        os.remove(path)
+    except:
+        pass
+
+
+def showUi18(cls, name=None, floating=False, position=(), size=(), pane=None,
+    replacePyPanel=False, hideTitleMenu=True, dialog=False, useThisPanel=None):
+    if dialog:
+        h = getHouWindow()
+        dial = cls(h)
+        res = dial.exec_()
+        return (res, dial)
+
+    panFile = createPanelFile(cls, name)
+    hou.pypanel.installFile(panFile)
+    pypan = hou.pypanel.interfacesInFile(panFile)[0]
+
+    menu = installedInterfaces()
+    menu.append(pypan.name())
+    menu = [x for x in menu if not x == '__separator__']
+    new = []
+    for m in menu:
+        if not m in new:
+            new.append(m)
+
+    hou.pypanel.setMenuInterfaces(tuple(new))
+
+    if pane is None:
+        pane = max(0, len(hou.ui.curDesktop().panes())-1)
+    if useThisPanel:
+        python_panel = useThisPanel
+    else:
+        python_panel = None
+
+        if floating:
+            python_panel = hou.ui.curDesktop().createFloatingPaneTab(hou.paneTabType.PythonPanel, position, size)
+        else:
+            if replacePyPanel:
+                for p in hou.ui.curDesktop().panes():
+                    for t in p.tabs():
+                        if t.type() == hou.paneTabType.PythonPanel:
+                            python_panel = t.setType(hou.paneTabType.PythonPanel)
+                if not python_panel:
+                    python_panel = hou.ui.curDesktop().panes(
+                    )[pane].createTab(hou.paneTabType.PythonPanel)
+            else:
+                python_panel = hou.ui.curDesktop().panes(
+                )[pane].createTab(hou.paneTabType.PythonPanel)
+
+    python_panel.setIsCurrentTab()
+    if hideTitleMenu:
+        python_panel.showToolbar(0)
+    else:
+        python_panel.showToolbar(1)
+        python_panel.expandToolbar(0)
+    if hou.applicationVersion()[0] < 15:
+        python_panel.setInterface(pypan)
+    else:
+        python_panel.setActiveInterface(pypan)
+
+    QtCore.QTimer.singleShot(2000, lambda x=panFile: delPanFile(x))
 
 
 
 ###################### CONTEXT FUNCTIONS
-
-# def saveToNode(code, node):
-#     definition = node.type().definition()
-#     definition.sections()["PythonCook"].setContents(code)
-# saveToNode('import hou',hou.selectedNodes()[0])
 
 def getAllDifinitions():
     names = []
@@ -117,19 +204,18 @@ def contextMenu(parent):
     m = houdiniMenuClass(parent)
     return m
 
-class houdiniMenuClass(hqt.QMenu):
+
+class houdiniMenuClass(QtWidgets.QMenu):
     def __init__(self, parent):
         super(houdiniMenuClass, self).__init__('Houdini', parent)
         self.par = parent
         self.setTearOffEnabled(1)
         self.setWindowTitle('MSE %s Houdini' % self.par.ver)
-        self.addAction(hqt.QAction('Read From Node', parent, triggered=self.readFromNode))
-        self.addAction(hqt.QAction('Save To Node', parent, triggered=self.saveToNode))
+        self.addAction(QtWidgets.QAction('Read From Node', parent, triggered=self.readFromNode))
+        self.addAction(QtWidgets.QAction('Save To Node', parent, triggered=self.saveToNode))
         self.addSeparator()
-        self.addAction(hqt.QAction('Read from hou.session Sourse', parent, triggered=self.readFromSession))
-        self.addAction(hqt.QAction('Save to hou.session', parent, triggered=self.saveToSession))
-
-
+        self.addAction(QtWidgets.QAction('Read from hou.session Sourse', parent, triggered=self.readFromSession))
+        self.addAction(QtWidgets.QAction('Save to hou.session', parent, triggered=self.saveToSession))
 
     def readFromNode(self):
         sel = hou.selectedNodes()
@@ -202,7 +288,7 @@ class houdiniMenuClass(hqt.QMenu):
 
 
 def wrapDroppedText(namespace, text, event):
-    if event.keyboardModifiers() == hqt.Qt.AltModifier:
+    if event.keyboardModifiers() == QtCore.Qt.AltModifier:
         syntax = []
         #node
         for node_parm in text.split(','):

@@ -14,8 +14,6 @@ def createInterface():
     reload(scriptEditor)
     w = scriptEditor.scriptEditorClass()
     w.setStyleSheet('')
-    import hqt
-    w.setStyleSheet( hqt.get_h14_style() )
     return w
 ]]></script>
     <help><![CDATA[]]></help>

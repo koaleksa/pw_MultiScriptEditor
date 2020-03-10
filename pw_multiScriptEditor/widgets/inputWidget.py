@@ -1,15 +1,17 @@
+from __future__ import absolute_import
+
 from Qt import QtCore, QtGui, QtWidgets
 
 import re
-import jedi
-from pythonSyntax import syntaxHighLighter
+from .. import jedi
+from .pythonSyntax import syntaxHighLighter
 reload(syntaxHighLighter)
-import completeWidget
+from . import completeWidget
 reload(completeWidget)
 from .. import settingsManager
 from .. import managers
 reload(managers)
-from pythonSyntax import design
+from .pythonSyntax import design
 # import inspect
 # from jedi import settings
 # settings.case_insensitive_completion = False
